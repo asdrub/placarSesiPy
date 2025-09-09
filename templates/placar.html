@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Placar SESI</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        html, body {
+            font-family: Helvetica, Arial, sans-serif !important;
+        }
+        body {
+            background: transparent;
+            margin: 0;
+            padding: 0;
+        }
+        .placar-bar {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100vw;
+            height: 10px;
+            margin-top: 10vh;
+        }
+        .time {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 25vw;
+            height: 30px;
+            font-size: 0.8em;
+            font-weight: bold;
+            color: #fff;
+        }
+        .time.aqa {
+            background: #c00;
+            border-top-left-radius: 12px;
+            border-bottom-left-radius: 12px;
+        }
+        .time.ita {
+            background: #1a9c2c;
+            border-top-right-radius: 12px;
+            border-bottom-right-radius: 12px;
+        }
+        .score {
+            width: 8vw;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #fff;
+        }
+        .score.aqa {
+            background: #a00;
+        }
+        .score.ita {
+            background: #158c1a;
+        }
+        .logo {
+            width: 50px;
+            height: 50px;
+            margin: 0 10px;
+        }
+        @media (max-width: 900px) {
+            .placar-bar { height: 10px; }
+            .time { font-size: 0.6em; height: 25px; }
+            .score { font-size: 0.9em; height: 25px; }
+            .logo { width: 35px; height: 35px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="placar-bar" id="placar-bar">
+        <img class="logo" id="logo-casa" src="{{ logo_casa }}" alt="Logo Casa">
+        <div class="time aqa" id="nome-casa">{{ nome_casa }}</div>
+        <div class="score aqa" id="placar-casa">{{ placar_casa }}</div>
+        <div class="score ita" id="placar-fora">{{ placar_fora }}</div>
+        <div class="time ita" id="nome-fora">{{ nome_fora }}</div>
+        <img class="logo" id="logo-fora" src="{{ logo_fora }}" alt="Logo Fora">
+    </div>
+    <script>
+    function atualizarPlacar() {
+        // Monta a URL da API de dados (mantém os mesmos parâmetros da página)
+        const params = new URLSearchParams(window.location.search);
+        fetch(window.location.pathname + '?' + params.toString() + '&json=1')
+            .then(resp => resp.json())
+            .then(data => {
+                //document.getElementById('logo-casa').src = data.logo_casa;
+                //document.getElementById('logo-fora').src = data.logo_fora;
+                //document.getElementById('nome-casa').textContent = data.nome_casa;
+                //document.getElementById('nome-fora').textContent = data.nome_fora;
+                document.getElementById('placar-casa').textContent = data.placar_casa;
+                document.getElementById('placar-fora').textContent = data.placar_fora;
+            });
+    }
+    setInterval(() => {
+      atualizarPlacar();
+    }, 5000);
+    </script>
+</body>
+</html>
