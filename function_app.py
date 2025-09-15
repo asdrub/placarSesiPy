@@ -56,6 +56,9 @@ def get_placar_data(url):
     resp = requests.get(url)
     resp.raise_for_status()
     data = resp.json()
+    # Salva o conteúdo de data em um arquivo JSON
+    #with open('data.json', 'w', encoding='utf-8') as f:
+    #    json.dump(data, f, ensure_ascii=False, indent=2)
     fixtures = data.get('data', {}).get('fixtures', [])
     for fixture in fixtures:
         competitors = fixture.get('competitors', [])

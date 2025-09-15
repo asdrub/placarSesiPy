@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <title>Placar SESI</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+
     <style>
         html, body {
             font-family: Helvetica, Arial, sans-serif !important;
@@ -81,22 +85,22 @@
     </div>
     <script>
     function atualizarPlacar() {
-        // Monta a URL da API de dados (mantém os mesmos parâmetros da página)
         const params = new URLSearchParams(window.location.search);
-        fetch(window.location.pathname + '?' + params.toString() + '&json=1')
+        params.set('json', '1');
+        params.set('_ts', Date.now()); // força a não cachear
+
+        fetch(window.location.pathname + '?' + params.toString(), { cache: 'no-store' })
             .then(resp => resp.json())
             .then(data => {
-                //document.getElementById('logo-casa').src = data.logo_casa;
-                //document.getElementById('logo-fora').src = data.logo_fora;
-                //document.getElementById('nome-casa').textContent = data.nome_casa;
-                //document.getElementById('nome-fora').textContent = data.nome_fora;
                 document.getElementById('placar-casa').textContent = data.placar_casa;
                 document.getElementById('placar-fora').textContent = data.placar_fora;
-            });
+            })
+            .catch(err => console.error('Erro ao buscar placar:', err));
     }
+
     setInterval(() => {
-      atualizarPlacar();
-    }, 40000);
+        atualizarPlacar();
+    }, 20000);
     </script>
 </body>
 </html>
