@@ -299,7 +299,8 @@ def admin_html() -> str:
     .score-row {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }}
     .score-row button {{ padding: 12px 8px; font-size: 1rem; }}
     .period-row {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }}
-    .period-row button.active {{ background: #111827; }}
+    .period-row button.active,
+    .period-row button.active:disabled {{ background: #111827; color: #f9fafb; box-shadow: inset 0 0 0 2px var(--accent); }}
     .period-row button:disabled {{ background: var(--disabled-bg); color: var(--disabled-ink); cursor: not-allowed; }}
     .clock {{ display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 8px; align-items: center; }}
     .clock-display {{ font-size: 1.7rem; font-weight: 800; text-align: center; padding: 10px 14px; border-radius: 16px; background: var(--clock-bg); color: var(--clock-ink); line-height: 1; }}
