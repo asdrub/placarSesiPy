@@ -1,10 +1,14 @@
 # 🏆 Placar SESI - Azure Functions
 
-Sistema de placar em tempo real para jogos do SESI, desenvolvido com Azure Functions e JavaScript vanilla.
+Sistema de placar em tempo real para jogos do SESI, com backend em Azure
+Functions e frontend servido como HTML/CSS/JS vanilla.
 
 ## 🚀 Funcionalidades
 
 - **Placar em tempo real** - Atualização automática a cada 20 segundos
+- **Console manual protegido** - Painel autenticado por senha unica para operar placar, faltas, periodo e cronometro
+- **Overlay publico por jogo** - URL publica por partida para uso em Streamlabs e outras transmissões
+- **Cronometro FIBA** - Contagem regressiva de 10 minutos por periodo, com pausa, retomada e reset ao trocar de quarto
 - **Interface responsiva** - Adaptada para desktop e mobile
 - **Cache otimizado** - Sem problemas de cache com dados antigos
 - **API JSON** - Retorna dados estruturados para integração
@@ -20,11 +24,43 @@ GET /api/index?competition={codigo}
 ```
 Retorna a interface HTML completa do placar.
 
+#### 🎛️ Console Manual (HTML)
+```
+GET /api/control
+```
+Retorna o painel manual protegido por senha unica.
+
+#### 📺 Overlay Publico por Jogo (HTML)
+```
+GET /api/overlay/{gameId}
+```
+Retorna o overlay publico de uma partida manual.
+
 #### 📊 Dados JSON
 ```
 GET /api/placar?competition={codigo}
 ```
 Retorna apenas os dados do placar em formato JSON.
+
+#### 🏀 Estado Publico de Partida Manual
+```
+GET /api/games/{gameId}
+```
+Retorna o estado atual de uma partida manual para o overlay.
+
+#### 🔐 Sessao do Console
+```
+POST /api/control/session
+```
+Valida a senha unica do painel.
+
+#### 🛠️ Criacao e Atualizacao de Partidas
+```
+POST /api/games
+PATCH /api/games/{gameId}
+DELETE /api/games/{gameId}
+```
+Permite criar, atualizar e encerrar partidas manuais com o header `X-Admin-Password`.
 
 ### Parâmetros
 
@@ -70,14 +106,22 @@ source .venv/bin/activate  # macOS/Linux
 pip install -r requirements.txt
 ```
 
-4. **Execute localmente:**
+4. **Instale as dependencias tambem para o worker local:**
 ```bash
-func start
+python -m pip install --target=.python_packages/lib/site-packages -r requirements.txt
 ```
 
-5. **Acesse:**
+5. **Se usar `UseDevelopmentStorage=true`, inicie o Azurite**
+
+6. **Execute localmente:**
+```bash
+PYTHONPATH="$PWD/.python_packages/lib/site-packages:$PYTHONPATH" func start
+```
+
+7. **Acesse:**
 ```
 http://localhost:7071/api/index?competition=SEU_CODIGO
+http://localhost:7071/api/control
 ```
 
 ### Deploy para Azure
@@ -89,9 +133,16 @@ func azure functionapp publish placarSesiFunctionApp
 ## 🌐 URLs de Produção
 
 - **Interface:** `https://placarsesifunctionapp.azurewebsites.net/api/index?competition={codigo}`
+- **Console manual:** `https://placarsesifunctionapp.azurewebsites.net/api/control`
+- **Overlay manual:** `https://placarsesifunctionapp.azurewebsites.net/api/overlay/{gameId}`
 - **API JSON:** `https://placarsesifunctionapp.azurewebsites.net/api/placar?competition={codigo}`
 
 ## 🏗️ Arquitetura
+
+O runtime atual da Function App e Python. O frontend entregue ao navegador usa
+JavaScript vanilla embutido no HTML. Qualquer migracao do backend para
+JavaScript deve ser tratada como decisao de arquitetura e so vale quando reduzir
+complexidade geral e custo operacional de forma objetiva.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -100,11 +151,23 @@ func azure functionapp publish placarSesiFunctionApp
 │  ┌─────────────────┐    ┌─────────────────────────────────────┐ │
 │  │   /api/index    │    │        /api/placar                  │ │
 │  │                 │    │                                     │ │
-│  │ • Serve HTML    │    │ • Consulta API externa              │ │
-│  │ • CSS embutido  │    │ • Filtra dados do SESI              │ │
-│  │ • JavaScript    │────┤ • Retorna JSON                      │ │
-│  │                 │    │ • Headers anti-cache                │ │
+│  │ • Overlay legado│    │ • Consulta API externa              │ │
+│  │ • HTML embutido │    │ • Filtra dados do SESI              │ │
+│  │ • Polling 20s   │────┤ • Retorna JSON                      │ │
 │  └─────────────────┘    └─────────────────────────────────────┘ │
+│                                                                 │
+│  ┌─────────────────┐    ┌─────────────────────────────────────┐ │
+│  │  /api/control   │    │      /api/games/{gameId}            │ │
+│  │                 │    │                                     │ │
+│  │ • Painel manual │    │ • Leitura publica do estado         │ │
+│  │ • Senha unica   │────┤ • PATCH/DELETE autenticados         │ │
+│  │ • Autosave      │    │ • Persistencia em blob JSON         │ │
+│  └─────────────────┘    └─────────────────────────────────────┘ │
+│                    ┌─────────────────────────────────────┐      │
+│                    │    /api/overlay/{gameId}            │      │
+│                    │ • Overlay publico por jogo          │      │
+│                    │ • Polling curto                     │      │
+│                    └─────────────────────────────────────┘      │
 └─────────────────────────────────────────────────────────────────┘
                                    │
                                    ▼
@@ -151,7 +214,21 @@ Verifique se:
 ## 📝 Dependências
 
 - **azure-functions**: Runtime do Azure Functions
+- **azure-storage-blob**: Persistencia enxuta por blob JSON das partidas manuais
 - **requests**: Cliente HTTP para consultar API externa
+
+## 📐 Diretrizes de desenvolvimento
+
+- Priorizar a menor solucao que resolva o caso de uso com clareza.
+- Reaproveitar codigo e capacidades existentes antes de adicionar novas
+  abstracoes ou dependencias.
+- Manter o backend em Python por padrao; considerar JavaScript apenas com ganho
+  comprovado de simplicidade ou leveza.
+- Preservar uso enxuto de recursos e logs apenas nos pontos essenciais.
+- Manter seguranca minima: segredos fora do codigo, validacao de entrada e erros
+  sem exposicao excessiva.
+
+As regras normativas completas estao em `.specify/memory/constitution.md`.
 
 ## 🤝 Contribuição
 

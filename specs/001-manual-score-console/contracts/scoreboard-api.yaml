@@ -1,0 +1,265 @@
+openapi: 3.1.0
+info:
+  title: Manual Scoreboard API
+  version: 0.1.0
+  summary: Contrato HTTP para painel de controle e overlay publico do placar manual.
+servers:
+  - url: https://{host}
+    variables:
+      host:
+        default: localhost:7071
+paths:
+  /api/control:
+    get:
+      summary: Retorna a interface HTML do painel de controle.
+      responses:
+        '200':
+          description: HTML do painel administrativo.
+          content:
+            text/html:
+              schema:
+                type: string
+  /api/overlay/{gameId}:
+    get:
+      summary: Retorna a interface HTML publica do overlay de um jogo.
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: HTML do overlay.
+          content:
+            text/html:
+              schema:
+                type: string
+        '404':
+          description: Jogo nao encontrado.
+  /api/control/session:
+    post:
+      summary: Valida a senha unica do painel de controle.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminLoginRequest'
+      responses:
+        '204':
+          description: Senha valida.
+        '401':
+          description: Senha invalida.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/games:
+    post:
+      summary: Cria uma nova partida manual.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGameRequest'
+      responses:
+        '201':
+          description: Partida criada com sucesso.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameCreatedResponse'
+        '401':
+          description: Nao autorizado.
+        '422':
+          description: Payload invalido.
+  /api/games/{gameId}:
+    get:
+      summary: Retorna o estado publico atual de uma partida.
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Estado atual da partida.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameStateResponse'
+        '404':
+          description: Partida nao encontrada.
+    patch:
+      summary: Aplica atualizacoes parciais ao estado da partida.
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GameUpdateRequest'
+      responses:
+        '200':
+          description: Estado atualizado da partida.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameStateResponse'
+        '401':
+          description: Nao autorizado.
+        '404':
+          description: Partida nao encontrada.
+        '422':
+          description: Payload invalido.
+    delete:
+      summary: Encerra ou remove a partida manualmente.
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Partida encerrada ou removida.
+        '401':
+          description: Nao autorizado.
+        '404':
+          description: Partida nao encontrada.
+components:
+  schemas:
+    AdminLoginRequest:
+      type: object
+      required: [password]
+      properties:
+        password:
+          type: string
+          minLength: 1
+    CreateGameRequest:
+      type: object
+      required: [homeTeam, awayTeam]
+      properties:
+        homeTeam:
+          $ref: '#/components/schemas/TeamInput'
+        awayTeam:
+          $ref: '#/components/schemas/TeamInput'
+    TeamInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        logoUrl:
+          type: string
+          format: uri
+    GameCreatedResponse:
+      type: object
+      required: [gameId, overlayUrl, adminUrl]
+      properties:
+        gameId:
+          type: string
+        overlayUrl:
+          type: string
+        adminUrl:
+          type: string
+    GameUpdateRequest:
+      type: object
+      properties:
+        homeTeam:
+          $ref: '#/components/schemas/TeamPatch'
+        awayTeam:
+          $ref: '#/components/schemas/TeamPatch'
+        currentPeriod:
+          type: integer
+          minimum: 1
+          maximum: 4
+        clock:
+          $ref: '#/components/schemas/ClockPatch'
+        status:
+          type: string
+          enum: [draft, live, paused, closed]
+    TeamPatch:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        logoUrl:
+          type: string
+          format: uri
+        score:
+          type: integer
+          minimum: 0
+        fouls:
+          type: integer
+          minimum: 0
+    ClockPatch:
+      type: object
+      properties:
+        elapsedSeconds:
+          type: integer
+          minimum: 0
+          maximum: 600
+        isRunning:
+          type: boolean
+    GameStateResponse:
+      type: object
+      required: [gameId, status, currentPeriod, clock, homeTeam, awayTeam, updatedAt]
+      properties:
+        gameId:
+          type: string
+        status:
+          type: string
+          enum: [draft, live, paused, closed]
+        currentPeriod:
+          type: integer
+          minimum: 1
+          maximum: 4
+        updatedAt:
+          type: string
+          format: date-time
+        clock:
+          type: object
+          required: [elapsedSeconds, isRunning]
+          properties:
+            elapsedSeconds:
+              type: integer
+              minimum: 0
+              maximum: 600
+            isRunning:
+              type: boolean
+        homeTeam:
+          $ref: '#/components/schemas/TeamState'
+        awayTeam:
+          $ref: '#/components/schemas/TeamState'
+    TeamState:
+      type: object
+      required: [name, score, fouls]
+      properties:
+        name:
+          type: string
+        logoUrl:
+          type: string
+          format: uri
+        score:
+          type: integer
+          minimum: 0
+        fouls:
+          type: integer
+          minimum: 0
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
