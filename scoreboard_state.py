@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 
 from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
 from azure.storage.blob import BlobServiceClient
-
+from club_catalog import club_catalog
 
 DEVSTORE_CONNECTION_STRING = (
     "DefaultEndpointsProtocol=http;"
@@ -19,6 +19,7 @@ DEVSTORE_CONNECTION_STRING = (
 )
 
 FIBA_PERIOD_SECONDS = 600
+CLUBS_BY_ID = {club["clubId"]: club for club in club_catalog}
 
 
 class GameStateError(Exception):
@@ -86,32 +87,104 @@ def optional_string(value: Any, field_name: str) -> str:
     return value.strip()
 
 
-def _team(side: str, name: str, logo_url: str) -> Dict[str, Any]:
-    return {
+def _team(side: str, name: str, logo_url: str, club_id: Optional[str] = None) -> Dict[str, Any]:
+    team = {
         "side": side,
         "name": validate_name(name, f"{side}Team.name"),
         "logoUrl": optional_string(logo_url, f"{side}Team.logoUrl"),
         "score": 0,
         "fouls": 0,
     }
+    if club_id:
+        team["clubId"] = club_id
+    return team
 
 
-def build_initial_game(home_name: str, away_name: str, home_logo: str = "", away_logo: str = "") -> Dict[str, Any]:
-    now = utc_now_iso()
+def resolve_club(club_id: Any, field_name: str) -> Dict[str, Any]:
+    normalized = optional_string(club_id, field_name)
+    if not normalized:
+        raise InvalidGameUpdate(f"{field_name} cannot be empty")
+    club = CLUBS_BY_ID.get(normalized)
+    if club is None:
+        raise InvalidGameUpdate(f"{field_name} must reference a valid club")
+    return club
+
+
+def validate_club_selection(home_club_id: Any, away_club_id: Any) -> None:
+    home_club = resolve_club(home_club_id, "homeClubId")
+    away_club = resolve_club(away_club_id, "awayClubId")
+    if home_club["clubId"] == away_club["clubId"]:
+        raise InvalidGameUpdate("homeClubId and awayClubId must be different")
+
+
+def build_initial_game(home_club_id: Any, away_club_id: Any) -> Dict[str, Any]:
+    validate_club_selection(home_club_id, away_club_id)
+    home_club = resolve_club(home_club_id, "homeClubId")
+    away_club = resolve_club(away_club_id, "awayClubId")
+    timestamp = utc_now_iso()
+
     return {
         "gameId": generate_game_id(),
         "status": "draft",
-        "createdAt": now,
-        "updatedAt": now,
+        "createdAt": timestamp,
+        "updatedAt": timestamp,
         "currentPeriod": 1,
         "clock": {
             "elapsedSeconds": FIBA_PERIOD_SECONDS,
             "isRunning": False,
             "lastStartedAt": None,
         },
-        "homeTeam": _team("home", home_name, home_logo),
-        "awayTeam": _team("away", away_name, away_logo),
+        "homeTeam": _team(
+            "home",
+            home_club["displayName"],
+            home_club["logoUrl"],
+            club_id=home_club["clubId"],
+        ),
+        "awayTeam": _team(
+            "away",
+            away_club["displayName"],
+            away_club["logoUrl"],
+            club_id=away_club["clubId"],
+        ),
     }
+
+
+class GameManager:
+    def __init__(self, container_name: str):
+        self._container_name = container_name
+        self._container_client = None
+
+    def create_game(self, home_name: str, away_name: str, home_logo: str, away_logo: str) -> Dict[str, Any]:
+        game = {
+            "home": {
+                "name": home_name,
+                "logoUrl": home_logo,
+                "score": 0,
+                "fouls": 0
+            },
+            "away": {
+                "name": away_name,
+                "logoUrl": away_logo,
+                "score": 0,
+                "fouls": 0
+            },
+            "status": "draft"
+        }
+        self.save_game(game)
+        return game
+
+    def save_game(self, game: Dict[str, Any]) -> None:
+        container = self._ensure_container()
+        document = {"version": 1, "game": game}
+        container.upload_blob(name=self._blob_name(game["gameId"]), data=json.dumps(document).encode("utf-8"), overwrite=True)
+
+    def _ensure_container(self):
+        if self._container_client is None:
+            self._container_client = BlobServiceClient.from_connection_string("<connection_string>").get_container_client(self._container_name)
+        return self._container_client
+
+    def _blob_name(self, game_id: str) -> str:
+        return f"{game_id}.json"
 
 
 def compute_clock_seconds(game: Dict[str, Any]) -> int:
@@ -192,14 +265,28 @@ def apply_game_update(game: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str
             if not isinstance(team_patch, dict):
                 raise InvalidGameUpdate(f"{team_key} must be an object")
             target = game[team_key]
+            if "clubId" in team_patch:
+                club = resolve_club(team_patch["clubId"], f"{team_key}.clubId")
+                target["clubId"] = club["clubId"]
+                target["name"] = club["displayName"]
+                target["logoUrl"] = club["logoUrl"]
             if "name" in team_patch:
+                if target.get("clubId"):
+                    raise InvalidGameUpdate(f"{team_key}.name cannot be edited directly for catalog teams")
                 target["name"] = validate_name(team_patch["name"], f"{team_key}.name")
             if "logoUrl" in team_patch:
+                if target.get("clubId"):
+                    raise InvalidGameUpdate(f"{team_key}.logoUrl cannot be edited directly for catalog teams")
                 target["logoUrl"] = optional_string(team_patch["logoUrl"], f"{team_key}.logoUrl")
             if "score" in team_patch:
                 target["score"] = validate_non_negative_int(team_patch["score"], f"{team_key}.score", max_value=999)
             if "fouls" in team_patch:
                 target["fouls"] = validate_non_negative_int(team_patch["fouls"], f"{team_key}.fouls", max_value=99)
+
+    home_club_id = game.get("homeTeam", {}).get("clubId")
+    away_club_id = game.get("awayTeam", {}).get("clubId")
+    if home_club_id and away_club_id and home_club_id == away_club_id:
+        raise InvalidGameUpdate("homeTeam.clubId and awayTeam.clubId must be different")
 
     if "currentPeriod" in updates:
         next_period = validate_period(updates["currentPeriod"])
@@ -271,8 +358,8 @@ class BlobGameStore:
     def _blob_name(self, game_id: str) -> str:
         return f"{sanitize_game_id(game_id)}.json"
 
-    def create_game(self, home_name: str, away_name: str, home_logo: str = "", away_logo: str = "") -> Dict[str, Any]:
-        game = build_initial_game(home_name, away_name, home_logo, away_logo)
+    def create_game(self, home_club_id: str, away_club_id: str) -> Dict[str, Any]:
+        game = build_initial_game(home_club_id, away_club_id)
         self.save_game(game)
         return serialize_game(game)
 

@@ -1,0 +1,216 @@
+openapi: 3.1.0
+info:
+  title: Championship Club Selector API
+  version: 0.1.0
+  summary: Contrato HTTP para criacao e leitura de partidas com selecao oficial de clubes 2026.
+servers:
+  - url: https://{host}
+    variables:
+      host:
+        default: localhost:7071
+paths:
+  /api/control:
+    get:
+      summary: Retorna a interface HTML do painel de controle.
+      responses:
+        '200':
+          description: HTML do painel administrativo.
+          content:
+            text/html:
+              schema:
+                type: string
+  /api/games:
+    post:
+      summary: Cria uma nova partida a partir de dois clubes oficiais distintos.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGameRequest'
+      responses:
+        '201':
+          description: Partida criada com sucesso.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameCreatedResponse'
+        '401':
+          description: Nao autorizado.
+        '422':
+          description: Payload invalido, clube desconhecido ou combinacao duplicada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/games/{gameId}:
+    get:
+      summary: Retorna o estado publico atual de uma partida.
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Estado atual da partida.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameStateResponse'
+        '404':
+          description: Partida nao encontrada.
+    patch:
+      summary: Aplica atualizacoes parciais ao estado da partida, incluindo troca de clube antes do inicio quando permitido.
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GameUpdateRequest'
+      responses:
+        '200':
+          description: Estado atualizado da partida.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameStateResponse'
+        '401':
+          description: Nao autorizado.
+        '404':
+          description: Partida nao encontrada.
+        '422':
+          description: Payload invalido, clube desconhecido ou combinacao duplicada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  schemas:
+    CreateGameRequest:
+      type: object
+      required: [homeClubId, awayClubId]
+      properties:
+        homeClubId:
+          $ref: '#/components/schemas/ClubId'
+        awayClubId:
+          $ref: '#/components/schemas/ClubId'
+      description: Requer dois clubes distintos do catalogo oficial de 2026.
+    GameCreatedResponse:
+      type: object
+      required: [gameId, overlayUrl, adminUrl]
+      properties:
+        gameId:
+          type: string
+        overlayUrl:
+          type: string
+        adminUrl:
+          type: string
+    GameUpdateRequest:
+      type: object
+      properties:
+        homeTeam:
+          $ref: '#/components/schemas/TeamPatch'
+        awayTeam:
+          $ref: '#/components/schemas/TeamPatch'
+        currentPeriod:
+          type: integer
+          minimum: 1
+          maximum: 4
+        clock:
+          $ref: '#/components/schemas/ClockPatch'
+        status:
+          type: string
+          enum: [draft, live, paused, closed]
+    TeamPatch:
+      type: object
+      properties:
+        clubId:
+          $ref: '#/components/schemas/ClubId'
+        score:
+          type: integer
+          minimum: 0
+        fouls:
+          type: integer
+          minimum: 0
+      description: A troca de clube substitui nome e logo derivados; o fluxo principal nao aceita edicao direta de name ou logoUrl.
+    ClockPatch:
+      type: object
+      properties:
+        elapsedSeconds:
+          type: integer
+          minimum: 0
+          maximum: 600
+        isRunning:
+          type: boolean
+    GameStateResponse:
+      type: object
+      required: [gameId, status, currentPeriod, clock, homeTeam, awayTeam, updatedAt]
+      properties:
+        gameId:
+          type: string
+        status:
+          type: string
+          enum: [draft, live, paused, closed]
+        currentPeriod:
+          type: integer
+          minimum: 1
+          maximum: 4
+        updatedAt:
+          type: string
+          format: date-time
+        clock:
+          type: object
+          required: [elapsedSeconds, isRunning]
+          properties:
+            elapsedSeconds:
+              type: integer
+              minimum: 0
+              maximum: 600
+            isRunning:
+              type: boolean
+        homeTeam:
+          $ref: '#/components/schemas/TeamState'
+        awayTeam:
+          $ref: '#/components/schemas/TeamState'
+    TeamState:
+      type: object
+      required: [name, score, fouls]
+      properties:
+        clubId:
+          allOf:
+            - $ref: '#/components/schemas/ClubId'
+          nullable: true
+        name:
+          type: string
+        logoUrl:
+          type: string
+          format: uri
+        score:
+          type: integer
+          minimum: 0
+        fouls:
+          type: integer
+          minimum: 0
+      description: Jogos legados podem omitir clubId e continuam validos para leitura.
+    ClubId:
+      type: string
+      enum:
+        - sesi-araraquara
+        - arae-smel-catanduva
+        - sao-jose-basketball-atleta-cidadao
+        - feac-franca-basquete
+        - ad-santo-andre
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string

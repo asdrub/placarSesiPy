@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 import azure.functions as func
 import requests
 
+from club_catalog import club_catalog
 from scoreboard_state import BlobGameStore, GameNotFoundError, GameStateError, InvalidGameUpdate
 
 # SESI / Araraquara
@@ -226,12 +227,13 @@ def overlay_html() -> str:
 
 
 def admin_html() -> str:
+    club_catalog_json = json.dumps(club_catalog, ensure_ascii=False)
     return f'''<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Console de Placar</title>
+  <title>Console de Placar 2026</title>
   <style>
     :root {{
       --bg: #f6efe4;
@@ -289,8 +291,9 @@ def admin_html() -> str:
     .layout.sidebar-collapsed .config-panel {{ display: none; }}
     .hidden {{ display: none !important; }}
     label {{ display: block; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 5px; color: var(--muted); }}
-    input[type="text"], input[type="password"], input[type="url"], input[type="number"] {{ width: 100%; border-radius: 12px; border: 1px solid var(--line); padding: 10px 12px; font: inherit; background: var(--input-bg); color: var(--ink); }}
-    input:focus {{ outline: 2px solid rgba(211,84,0,0.25); border-color: var(--accent); }}
+    input[type="text"], input[type="password"], input[type="url"], input[type="number"], select {{ width: 100%; border-radius: 12px; border: 1px solid var(--line); padding: 10px 12px; font: inherit; background: var(--input-bg); color: var(--ink); }}
+    input:focus, select:focus {{ outline: 2px solid rgba(211,84,0,0.25); border-color: var(--accent); }}
+    input[readonly] {{ opacity: 0.85; cursor: default; }}
     button {{ border: 0; border-radius: 12px; padding: 10px 14px; font: inherit; font-weight: 700; cursor: pointer; background: var(--accent); color: white; }}
     button.secondary {{ background: var(--secondary-bg); color: var(--ink); }}
     button.ghost {{ background: transparent; color: var(--accent-dark); border: 1px solid var(--line); }}
@@ -306,6 +309,11 @@ def admin_html() -> str:
     .clock-display {{ font-size: 1.7rem; font-weight: 800; text-align: center; padding: 10px 14px; border-radius: 16px; background: var(--clock-bg); color: var(--clock-ink); line-height: 1; }}
     .meta-card {{ background: var(--input-bg); border: 1px dashed var(--line); border-radius: 16px; padding: 12px; font-size: 0.88rem; }}
     .meta-card a {{ color: var(--accent-dark); word-break: break-all; }}
+    .club-preview {{ display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 10px; align-items: center; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 16px; background: var(--input-bg); }}
+    .club-preview img {{ width: 52px; height: 52px; object-fit: contain; border-radius: 12px; background: rgba(255,255,255,0.92); padding: 4px; }}
+    .club-preview.is-empty img {{ display: none; }}
+    .club-preview strong {{ display: block; font-size: 0.95rem; line-height: 1.2; }}
+    .club-preview span {{ display: block; color: var(--muted); font-size: 0.8rem; }}
     .panel-toolbar {{ display: flex; justify-content: space-between; align-items: center; gap: 12px; }}
     .panel-toolbar h2 {{ margin: 0; }}
     @media (max-width: 860px) {{
@@ -325,7 +333,7 @@ def admin_html() -> str:
     <section class="hero">
       <div>
         <p class="muted">Mesa de controle manual</p>
-        <h1>Console de Placar</h1>
+        <h1>Console de Placar 2026</h1>
       </div>
       <div class="hero-actions">
         <label class="theme-toggle" for="darkModeSwitch">
@@ -352,14 +360,28 @@ def admin_html() -> str:
           <div>
             <p class="muted">Crie uma nova partida ou continue a partir de um gameId existente.</p>
           </div>
-          <label for="homeName">Time casa</label>
-          <input id="homeName" type="text" placeholder="SESI Araraquara">
-          <label for="homeLogo">Logo casa</label>
-          <input id="homeLogo" type="url" placeholder="https://...">
-          <label for="awayName">Time visitante</label>
-          <input id="awayName" type="text" placeholder="Visitante">
-          <label for="awayLogo">Logo visitante</label>
-          <input id="awayLogo" type="url" placeholder="https://...">
+          <label for="homeClubId">Time casa</label>
+          <select id="homeClubId">
+            <option value="">Selecione o clube mandante</option>
+          </select>
+          <div id="homeClubPreview" class="club-preview is-empty">
+            <img id="homeClubPreviewLogo" src="" alt="">
+            <div>
+              <strong id="homeClubPreviewName">Nenhum clube selecionado</strong>
+              <span>Nome e logo oficiais preenchidos automaticamente.</span>
+            </div>
+          </div>
+          <label for="awayClubId">Time visitante</label>
+          <select id="awayClubId">
+            <option value="">Selecione o clube visitante</option>
+          </select>
+          <div id="awayClubPreview" class="club-preview is-empty">
+            <img id="awayClubPreviewLogo" src="" alt="">
+            <div>
+              <strong id="awayClubPreviewName">Nenhum clube selecionado</strong>
+              <span>Nome e logo oficiais preenchidos automaticamente.</span>
+            </div>
+          </div>
           <button id="createGameButton">Criar partida</button>
           <button id="loadGameButton" class="secondary">Carregar pela URL atual</button>
           <button id="closeGameButton" class="ghost hidden">Encerrar partida</button>
@@ -373,8 +395,8 @@ def admin_html() -> str:
         <section class="team-grid">
           <article class="stack">
             <h2>Casa</h2>
-            <label for="homeNameLive">Nome</label>
-            <input id="homeNameLive" type="text">
+            <label for="homeNameLive">Clube selecionado</label>
+            <input id="homeNameLive" type="text" readonly>
             <label for="homeScore">Pontos</label>
             <input id="homeScore" type="number" min="0">
             <div class="score-row">
@@ -387,8 +409,8 @@ def admin_html() -> str:
           </article>
           <article class="stack">
             <h2>Visitante</h2>
-            <label for="awayNameLive">Nome</label>
-            <input id="awayNameLive" type="text">
+            <label for="awayNameLive">Clube selecionado</label>
+            <input id="awayNameLive" type="text" readonly>
             <label for="awayScore">Pontos</label>
             <input id="awayScore" type="number" min="0">
             <div class="score-row">
@@ -423,6 +445,8 @@ def admin_html() -> str:
   </div>
   <script>
     const pollMs = {OVERLAY_POLL_MS};
+    const clubCatalog = {club_catalog_json};
+    const clubCatalogById = Object.fromEntries(clubCatalog.map((club) => [club.clubId, club]));
     const queryGameId = new URLSearchParams(window.location.search).get('gameId');
     const state = {{ password: sessionStorage.getItem('adminPassword') || '', gameId: queryGameId || '', game: null, configOpen: true, autoCollapsedGameId: '' }};
     let pollHandle = null;
@@ -447,10 +471,14 @@ def admin_html() -> str:
       linksCard: document.getElementById('linksCard'),
       gameIdText: document.getElementById('gameIdText'),
       overlayLink: document.getElementById('overlayLink'),
-      homeName: document.getElementById('homeName'),
-      homeLogo: document.getElementById('homeLogo'),
-      awayName: document.getElementById('awayName'),
-      awayLogo: document.getElementById('awayLogo'),
+      homeClubId: document.getElementById('homeClubId'),
+      awayClubId: document.getElementById('awayClubId'),
+      homeClubPreview: document.getElementById('homeClubPreview'),
+      awayClubPreview: document.getElementById('awayClubPreview'),
+      homeClubPreviewLogo: document.getElementById('homeClubPreviewLogo'),
+      awayClubPreviewLogo: document.getElementById('awayClubPreviewLogo'),
+      homeClubPreviewName: document.getElementById('homeClubPreviewName'),
+      awayClubPreviewName: document.getElementById('awayClubPreviewName'),
       homeNameLive: document.getElementById('homeNameLive'),
       homeScore: document.getElementById('homeScore'),
       homeFouls: document.getElementById('homeFouls'),
@@ -464,6 +492,12 @@ def admin_html() -> str:
       periodButtons: Array.from(document.querySelectorAll('[data-period]')),
       scoreButtons: Array.from(document.querySelectorAll('[data-team][data-delta]')),
     }};
+
+    function populateClubSelectors() {{
+      const options = clubCatalog.map((club) => `<option value="${{club.clubId}}">${{club.displayName}}</option>`).join('');
+      elements.homeClubId.insertAdjacentHTML('beforeend', options);
+      elements.awayClubId.insertAdjacentHTML('beforeend', options);
+    }}
 
     function applyTheme(mode) {{
       const darkMode = mode === 'dark';
@@ -578,6 +612,60 @@ def admin_html() -> str:
       }}
     }}
 
+    function syncSelect(element, value) {{
+      if (document.activeElement !== element) {{
+        element.value = value ?? '';
+      }}
+    }}
+
+    function renderClubPreview(selectElement, previewElement, logoElement, nameElement) {{
+      const club = clubCatalogById[selectElement.value] || null;
+      previewElement.classList.toggle('is-empty', !club);
+      if (!club) {{
+        logoElement.src = '';
+        logoElement.alt = '';
+        nameElement.textContent = 'Nenhum clube selecionado';
+        return;
+      }}
+      logoElement.src = club.logoUrl;
+      logoElement.alt = `Logo ${{club.displayName}}`;
+      nameElement.textContent = club.displayName;
+    }}
+
+    function renderClubSelectionState() {{
+      renderClubPreview(elements.homeClubId, elements.homeClubPreview, elements.homeClubPreviewLogo, elements.homeClubPreviewName);
+      renderClubPreview(elements.awayClubId, elements.awayClubPreview, elements.awayClubPreviewLogo, elements.awayClubPreviewName);
+      const missingSelection = !elements.homeClubId.value || !elements.awayClubId.value;
+      const duplicatedSelection = !missingSelection && elements.homeClubId.value === elements.awayClubId.value;
+      elements.createGameButton.disabled = missingSelection || duplicatedSelection;
+      elements.createGameButton.title = duplicatedSelection
+        ? 'Selecione clubes diferentes para mandante e visitante.'
+        : (missingSelection ? 'Selecione os dois clubes para criar a partida.' : 'Criar partida');
+    }}
+
+    function syncClubSelectorsFromGame(game) {{
+      syncSelect(elements.homeClubId, game?.homeTeam?.clubId || '');
+      syncSelect(elements.awayClubId, game?.awayTeam?.clubId || '');
+      renderClubSelectionState();
+    }}
+
+    function validateClubSelection() {{
+      if (!elements.homeClubId.value || !elements.awayClubId.value) {{
+        throw new Error('Selecione os clubes mandante e visitante antes de criar a partida.');
+      }}
+      if (elements.homeClubId.value === elements.awayClubId.value) {{
+        throw new Error('Os clubes mandante e visitante devem ser diferentes.');
+      }}
+    }}
+
+    async function updateTeamClub(teamKey, clubId) {{
+      if (!state.gameId || !state.game || state.game.status !== 'draft' || !clubId) {{
+        return;
+      }}
+      await patchGame({{ [teamKey]: {{ clubId }} }});
+      setNotice('Clube atualizado no setup da partida.');
+    }}
+
     function renderLinks() {{
       if (!state.gameId) {{
         elements.linksCard.classList.add('hidden');
@@ -598,6 +686,9 @@ def admin_html() -> str:
       if (!game) {{
         elements.controlPanel.classList.add('hidden');
         state.autoCollapsedGameId = '';
+        syncClubSelectorsFromGame(null);
+        elements.homeClubId.disabled = false;
+        elements.awayClubId.disabled = false;
         setConfigOpen(true);
         return;
       }}
@@ -606,6 +697,10 @@ def admin_html() -> str:
         state.configOpen = false;
       }}
       elements.controlPanel.classList.remove('hidden');
+      syncClubSelectorsFromGame(game);
+      const clubsLocked = game.status && game.status !== 'draft';
+      elements.homeClubId.disabled = Boolean(clubsLocked);
+      elements.awayClubId.disabled = Boolean(clubsLocked);
       syncInput(elements.homeNameLive, game.homeTeam.name);
       syncInput(elements.homeScore, game.homeTeam.score);
       syncInput(elements.homeFouls, game.homeTeam.fouls);
@@ -683,9 +778,10 @@ def admin_html() -> str:
 
     async function createGame() {{
       try {{
+        validateClubSelection();
         const payload = {{
-          homeTeam: {{ name: elements.homeName.value.trim(), logoUrl: elements.homeLogo.value.trim() }},
-          awayTeam: {{ name: elements.awayName.value.trim(), logoUrl: elements.awayLogo.value.trim() }},
+          homeClubId: elements.homeClubId.value,
+          awayClubId: elements.awayClubId.value,
         }};
         const created = await request('/api/games', {{ method: 'POST', headers: authHeaders(), body: JSON.stringify(payload) }});
         state.gameId = created.gameId;
@@ -730,6 +826,8 @@ def admin_html() -> str:
         state.game = null;
         state.gameId = '';
         state.autoCollapsedGameId = '';
+        elements.homeClubId.value = '';
+        elements.awayClubId.value = '';
         history.replaceState(null, '', window.location.pathname);
         renderGame();
         renderLinks();
@@ -784,13 +882,29 @@ def admin_html() -> str:
       const current = Number(state.game[teamKey].score || 0);
       patchGame({{ [teamKey]: {{ score: current + Number(button.dataset.delta) }} }});
     }}));
-    elements.homeNameLive.addEventListener('input', () => schedulePatch('homeName', () => ({{ homeTeam: {{ name: elements.homeNameLive.value }} }})));
     elements.homeScore.addEventListener('input', () => schedulePatch('homeScore', () => ({{ homeTeam: {{ score: Number(elements.homeScore.value || 0) }} }})));
     elements.homeFouls.addEventListener('input', () => schedulePatch('homeFouls', () => ({{ homeTeam: {{ fouls: Number(elements.homeFouls.value || 0) }} }})));
-    elements.awayNameLive.addEventListener('input', () => schedulePatch('awayName', () => ({{ awayTeam: {{ name: elements.awayNameLive.value }} }})));
     elements.awayScore.addEventListener('input', () => schedulePatch('awayScore', () => ({{ awayTeam: {{ score: Number(elements.awayScore.value || 0) }} }})));
     elements.awayFouls.addEventListener('input', () => schedulePatch('awayFouls', () => ({{ awayTeam: {{ fouls: Number(elements.awayFouls.value || 0) }} }})));
+    elements.homeClubId.addEventListener('change', async () => {{
+      renderClubSelectionState();
+      if (elements.homeClubId.value && elements.homeClubId.value === elements.awayClubId.value) {{
+        setNotice('Os clubes mandante e visitante devem ser diferentes.', true);
+        return;
+      }}
+      await updateTeamClub('homeTeam', elements.homeClubId.value);
+    }});
+    elements.awayClubId.addEventListener('change', async () => {{
+      renderClubSelectionState();
+      if (elements.awayClubId.value && elements.homeClubId.value === elements.awayClubId.value) {{
+        setNotice('Os clubes mandante e visitante devem ser diferentes.', true);
+        return;
+      }}
+      await updateTeamClub('awayTeam', elements.awayClubId.value);
+    }});
 
+    populateClubSelectors();
+    renderClubSelectionState();
     initializeTheme();
     setConfigOpen(true);
     if (state.password) {{ elements.password.value = state.password; login(); }}
@@ -897,9 +1011,12 @@ def games(req: func.HttpRequest) -> func.HttpResponse:
 
     try:
         payload = parse_json_request(req)
+        clubs_by_name = {club["displayName"]: club["clubId"] for club in club_catalog}
         home = payload.get("homeTeam") or {}
         away = payload.get("awayTeam") or {}
-        game = store.create_game(home_name=home.get("name", ""), away_name=away.get("name", ""), home_logo=home.get("logoUrl", ""), away_logo=away.get("logoUrl", ""))
+        home_club_id = payload.get("homeClubId") or clubs_by_name.get((home.get("name") or "").strip())
+        away_club_id = payload.get("awayClubId") or clubs_by_name.get((away.get("name") or "").strip())
+        game = store.create_game(home_club_id=home_club_id, away_club_id=away_club_id)
     except InvalidGameUpdate as exc:
         return json_response({"error": str(exc)}, status_code=422)
     except GameStateError as exc:
