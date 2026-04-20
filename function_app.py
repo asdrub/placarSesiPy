@@ -8,6 +8,7 @@ import azure.functions as func
 import requests
 
 from club_catalog import club_catalog
+from scoreboard_layout_catalog import DEFAULT_LAYOUT_ID, scoreboard_layout_catalog
 from scoreboard_state import BlobGameStore, GameNotFoundError, GameStateError, InvalidGameUpdate
 
 # SESI / Araraquara
@@ -91,21 +92,29 @@ def overlay_html() -> str:
     }}
     * {{ box-sizing: border-box; }}
     html, body {{ margin: 0; min-height: 100%; background: transparent; font-family: "Trebuchet MS", "Segoe UI", sans-serif; }}
-    body {{ display: flex; align-items: flex-end; justify-content: center; padding: 20px; }}
-    .shell {{ min-width: 520px; background: linear-gradient(135deg, rgba(7, 12, 24, 0.94), rgba(20, 31, 52, 0.88)); color: var(--text); border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 20px; box-shadow: 0 18px 48px rgba(15, 23, 42, 0.35); overflow: hidden; }}
-    .status {{ display: flex; justify-content: space-between; padding: 10px 18px; background: rgba(255,255,255,0.06); font-size: 0.9rem; letter-spacing: 0.08em; text-transform: uppercase; }}
-    .board {{ display: grid; grid-template-columns: 1fr auto 1fr; align-items: stretch; gap: 12px; padding: 16px 18px 18px; }}
-    .team {{ display: grid; grid-template-columns: 64px 1fr; gap: 12px; align-items: center; padding: 12px; border-radius: 18px; min-height: 112px; }}
-    .team.away {{ grid-template-columns: 1fr 64px; }}
+    body {{ display: flex; align-items: flex-end; justify-content: center; padding: 10px; }}
+    .shell {{ min-width: 520px; background: linear-gradient(135deg, rgba(7, 12, 24, 0.94), rgba(20, 31, 52, 0.88)); color: var(--text); border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 12px; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25); overflow: hidden; }}
+    .status {{ display: flex; justify-content: space-between; padding: 5px 10px; background: rgba(255,255,255,0.06); font-size: 0.9rem; letter-spacing: 0.08em; text-transform: uppercase; }}
+    .board {{ display: grid; grid-template-columns: 1fr auto 1fr; align-items: stretch; gap: 6px; padding: 8px 8px 10px; }}
+    .board.board--broadcast-split {{ grid-template-columns: 1fr 140px 1fr; }}
+    .board.board--compact-led {{ grid-template-columns: 1fr; gap: 4px; }}
+    .team {{ display: grid; grid-template-columns: 48px 1fr; gap: 8px; align-items: center; padding: 6px; border-radius: 10px; min-height: 56px; }}
+    .team.away {{ grid-template-columns: 1fr 48px; }}
     .team.home {{ background: linear-gradient(135deg, rgba(198,40,40,0.92), rgba(127,29,29,0.92)); }}
     .team.away {{ background: linear-gradient(135deg, rgba(31,41,55,0.96), rgba(15,23,42,0.92)); }}
-    .logo {{ width: 64px; height: 64px; object-fit: cover; border-radius: 16px; background: rgba(255,255,255,0.94); border: 2px solid rgba(255,255,255,0.28); }}
-    .team-name {{ font-size: 1.15rem; font-weight: 700; line-height: 1.1; }}
-    .team-meta {{ margin-top: 8px; color: rgba(255,255,255,0.88); font-size: 0.85rem; }}
-    .middle {{ display: grid; gap: 10px; min-width: 150px; align-content: center; }}
-    .score {{ text-align: center; font-size: 2.7rem; font-weight: 800; letter-spacing: 0.08em; background: rgba(255,255,255,0.08); border-radius: 18px; padding: 12px 10px; }}
-    .clock {{ text-align: center; font-size: 1.45rem; font-weight: 700; background: rgba(255,255,255,0.08); border-radius: 16px; padding: 12px 10px; }}
-    .empty {{ padding: 28px; text-align: center; color: var(--muted); }}
+    .team.compact {{ min-height: auto; grid-template-columns: 36px 1fr auto; padding: 4px 6px; }}
+    .logo {{ width: 40px; height: 40px; object-fit: cover; border-radius: 8px; background: rgba(255,255,255,0.94); border: 2px solid rgba(255,255,255,0.28); }}
+    .team.compact .logo {{ width: 32px; height: 32px; border-radius: 7px; }}
+    .team-name {{ font-size: 1rem; font-weight: 700; line-height: 1.1; }}
+    .team-meta {{ margin-top: 4px; color: rgba(255,255,255,0.88); font-size: 0.8rem; }}
+    .middle {{ display: grid; gap: 4px; min-width: 100px; align-content: center; }}
+    .score {{ text-align: center; font-size: 2.1rem; font-weight: 800; letter-spacing: 0.08em; background: rgba(255,255,255,0.08); border-radius: 10px; padding: 6px 6px; }}
+    .clock {{ text-align: center; font-size: 1.1rem; font-weight: 700; background: rgba(255,255,255,0.08); border-radius: 8px; padding: 6px 6px; }}
+    .stacked-score {{ display: grid; gap: 4px; align-content: center; }}
+    .stacked-score .score {{ font-size: 1.5rem; }}
+    .compact-led-strip {{ display: grid; gap: 4px; }}
+    .compact-score {{ font-size: 1rem; font-weight: 800; padding: 4px 6px; border-radius: 7px; background: rgba(255,255,255,0.08); }}
+    .empty {{ padding: 10px; text-align: center; color: var(--muted); }}
   </style>
 </head>
 <body>
@@ -173,9 +182,55 @@ def overlay_html() -> str:
 
     function renderGame(game) {{
       currentGame = annotateGame(game);
+      const layoutId = game.layoutId || '{DEFAULT_LAYOUT_ID}';
       const content = document.getElementById('content');
-      content.className = 'board';
-      content.innerHTML = `
+      if (layoutId === 'broadcast-split') {{
+        content.className = 'board board--broadcast-split';
+        content.innerHTML = `
+          <section class="team home">
+            <img class="logo" src="${{game.homeTeam.logoUrl || ''}}" alt="Logo time casa">
+            <div>
+              <div class="team-name">${{game.homeTeam.name || 'Time Casa'}}</div>
+              <div class="team-meta">Faltas: ${{game.homeTeam.fouls ?? 0}}</div>
+            </div>
+          </section>
+          <section class="stacked-score">
+            <div class="score">${{game.homeTeam.score ?? 0}} - ${{game.awayTeam.score ?? 0}}</div>
+            <div class="clock">${{formatClock(clientClockSeconds(currentGame))}}</div>
+          </section>
+          <section class="team away">
+            <div>
+              <div class="team-name">${{game.awayTeam.name || 'Time Visitante'}}</div>
+              <div class="team-meta">Faltas: ${{game.awayTeam.fouls ?? 0}}</div>
+            </div>
+            <img class="logo" src="${{game.awayTeam.logoUrl || ''}}" alt="Logo time visitante">
+          </section>`;
+      }} else if (layoutId === 'compact-led') {{
+        content.className = 'compact-led-strip';
+        content.innerHTML = `
+          <section class="team home compact">
+            <img class="logo" src="${{game.homeTeam.logoUrl || ''}}" alt="Logo time casa">
+            <div>
+              <div class="team-name">${{game.homeTeam.name || 'Time Casa'}}</div>
+              <div class="team-meta">Faltas: ${{game.homeTeam.fouls ?? 0}}</div>
+            </div>
+            <div class="compact-score">${{game.homeTeam.score ?? 0}}</div>
+          </section>
+          <section class="middle">
+            <div class="score">${{game.homeTeam.score ?? 0}} - ${{game.awayTeam.score ?? 0}}</div>
+            <div class="clock">${{formatClock(clientClockSeconds(currentGame))}}</div>
+          </section>
+          <section class="team away compact">
+            <img class="logo" src="${{game.awayTeam.logoUrl || ''}}" alt="Logo time visitante">
+            <div>
+              <div class="team-name">${{game.awayTeam.name || 'Time Visitante'}}</div>
+              <div class="team-meta">Faltas: ${{game.awayTeam.fouls ?? 0}}</div>
+            </div>
+            <div class="compact-score">${{game.awayTeam.score ?? 0}}</div>
+          </section>`;
+      }} else {{
+        content.className = 'board';
+        content.innerHTML = `
         <section class="team home">
           <img class="logo" src="${{game.homeTeam.logoUrl || ''}}" alt="Logo time casa">
           <div>
@@ -194,6 +249,7 @@ def overlay_html() -> str:
           </div>
           <img class="logo" src="${{game.awayTeam.logoUrl || ''}}" alt="Logo time visitante">
         </section>`;
+      }}
       document.getElementById('status').textContent = (game.status || 'draft').toUpperCase();
       document.getElementById('period').textContent = `Q${{game.currentPeriod || 1}}`;
       startOverlayTicker();
@@ -228,6 +284,7 @@ def overlay_html() -> str:
 
 def admin_html() -> str:
     club_catalog_json = json.dumps(club_catalog, ensure_ascii=False)
+    layout_catalog_json = json.dumps(scoreboard_layout_catalog, ensure_ascii=False)
     return f'''<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -314,6 +371,12 @@ def admin_html() -> str:
     .club-preview.is-empty img {{ display: none; }}
     .club-preview strong {{ display: block; font-size: 0.95rem; line-height: 1.2; }}
     .club-preview span {{ display: block; color: var(--muted); font-size: 0.8rem; }}
+    .layout-gallery {{ display: grid; gap: 10px; }}
+    .layout-option {{ display: grid; gap: 8px; text-align: left; padding: 14px; border: 1px solid var(--line); border-radius: 16px; background: var(--input-bg); color: var(--ink); }}
+    .layout-option.active {{ box-shadow: inset 0 0 0 2px var(--accent); border-color: var(--accent); }}
+    .layout-option small {{ color: var(--muted); font-weight: 600; }}
+    .layout-preview {{ border-radius: 12px; border: 1px dashed var(--line); padding: 10px; min-height: 72px; background: linear-gradient(135deg, rgba(211,84,0,0.08), rgba(17,24,39,0.04)); display: grid; place-items: center; font-size: 0.8rem; color: var(--muted); }}
+    .layout-actions {{ display: grid; gap: 10px; }}
     .panel-toolbar {{ display: flex; justify-content: space-between; align-items: center; gap: 12px; }}
     .panel-toolbar h2 {{ margin: 0; }}
     @media (max-width: 860px) {{
@@ -352,6 +415,21 @@ def admin_html() -> str:
           <input id="password" type="password" placeholder="Informe a senha configurada">
           <button id="loginButton">Entrar</button>
         </section>
+        <section id="galleryPanel" class="stack hidden">
+          <div class="panel-toolbar">
+            <h2>Escolha o layout</h2>
+            <button id="backToGalleryButton" class="ghost hidden" type="button">Voltar para layouts</button>
+          </div>
+          <p class="muted">Selecione o modelo visual do placar antes de abrir o setup da partida.</p>
+          <div id="layoutGallery" class="layout-gallery"></div>
+          <div class="layout-actions">
+            <div class="meta-card">
+              <div><strong>Layout selecionado:</strong> <span id="selectedLayoutText">Nenhum</span></div>
+              <div id="selectedLayoutHint" class="muted">Escolha uma opcao para liberar o setup.</div>
+            </div>
+            <button id="continueSetupButton" class="secondary" disabled>Continuar para o setup</button>
+          </div>
+        </section>
         <section id="gamePanel" class="stack hidden">
           <div class="panel-toolbar">
             <h2>Partida</h2>
@@ -360,6 +438,11 @@ def admin_html() -> str:
           <div>
             <p class="muted">Crie uma nova partida ou continue a partir de um gameId existente.</p>
           </div>
+          <div id="layoutSummaryCard" class="meta-card hidden">
+            <div><strong>Layout atual:</strong> <span id="layoutNameText">--</span></div>
+            <div id="layoutPreviewText" class="muted">--</div>
+          </div>
+          <button id="changeLayoutButton" class="secondary hidden" type="button">Trocar layout</button>
           <label for="homeClubId">Time casa</label>
           <select id="homeClubId">
             <option value="">Selecione o clube mandante</option>
@@ -446,9 +529,12 @@ def admin_html() -> str:
   <script>
     const pollMs = {OVERLAY_POLL_MS};
     const clubCatalog = {club_catalog_json};
+    const layoutCatalog = {layout_catalog_json};
     const clubCatalogById = Object.fromEntries(clubCatalog.map((club) => [club.clubId, club]));
+    const layoutCatalogById = Object.fromEntries(layoutCatalog.map((layout) => [layout.layoutId, layout]));
+    const defaultLayoutId = (layoutCatalog.find((layout) => layout.isDefault) || layoutCatalog[0] || {{ layoutId: '{DEFAULT_LAYOUT_ID}' }}).layoutId;
     const queryGameId = new URLSearchParams(window.location.search).get('gameId');
-    const state = {{ password: sessionStorage.getItem('adminPassword') || '', gameId: queryGameId || '', game: null, configOpen: true, autoCollapsedGameId: '' }};
+    const state = {{ password: sessionStorage.getItem('adminPassword') || '', gameId: queryGameId || '', game: null, configOpen: true, autoCollapsedGameId: '', setupStage: 'login', selectedLayoutId: sessionStorage.getItem('selectedLayoutId') || '' }};
     let pollHandle = null;
     let clockTickHandle = null;
     const themeStorageKey = 'scoreboardTheme';
@@ -461,10 +547,20 @@ def admin_html() -> str:
       menuButton: document.getElementById('menuButton'),
       hideConfigButton: document.getElementById('hideConfigButton'),
       loginPanel: document.getElementById('loginPanel'),
+      galleryPanel: document.getElementById('galleryPanel'),
       gamePanel: document.getElementById('gamePanel'),
       controlPanel: document.getElementById('controlPanel'),
       password: document.getElementById('password'),
       loginButton: document.getElementById('loginButton'),
+      layoutGallery: document.getElementById('layoutGallery'),
+      continueSetupButton: document.getElementById('continueSetupButton'),
+      selectedLayoutText: document.getElementById('selectedLayoutText'),
+      selectedLayoutHint: document.getElementById('selectedLayoutHint'),
+      layoutSummaryCard: document.getElementById('layoutSummaryCard'),
+      layoutNameText: document.getElementById('layoutNameText'),
+      layoutPreviewText: document.getElementById('layoutPreviewText'),
+      changeLayoutButton: document.getElementById('changeLayoutButton'),
+      backToGalleryButton: document.getElementById('backToGalleryButton'),
       createGameButton: document.getElementById('createGameButton'),
       loadGameButton: document.getElementById('loadGameButton'),
       closeGameButton: document.getElementById('closeGameButton'),
@@ -497,6 +593,84 @@ def admin_html() -> str:
       const options = clubCatalog.map((club) => `<option value="${{club.clubId}}">${{club.displayName}}</option>`).join('');
       elements.homeClubId.insertAdjacentHTML('beforeend', options);
       elements.awayClubId.insertAdjacentHTML('beforeend', options);
+    }}
+
+    function setSelectedLayout(layoutId) {{
+      if (!layoutId || !layoutCatalogById[layoutId]) {{
+        state.selectedLayoutId = '';
+        sessionStorage.removeItem('selectedLayoutId');
+      }} else {{
+        state.selectedLayoutId = layoutId;
+        sessionStorage.setItem('selectedLayoutId', layoutId);
+      }}
+      renderLayoutGallery();
+      renderLayoutSelectionSummary();
+    }}
+
+    function getActiveLayout() {{
+      return layoutCatalogById[state.selectedLayoutId] || layoutCatalogById[defaultLayoutId];
+    }}
+
+    function renderLayoutGallery() {{
+      elements.layoutGallery.innerHTML = layoutCatalog.map((layout) => `
+        <button type="button" class="layout-option${{layout.layoutId === state.selectedLayoutId ? ' active' : ''}}" data-layout-id="${{layout.layoutId}}">
+          <strong>${{layout.displayName}}</strong>
+          <small>${{layout.previewLabel}}</small>
+          <div class="layout-preview">${{layout.previewAsset}}</div>
+        </button>
+      `).join('');
+      Array.from(elements.layoutGallery.querySelectorAll('[data-layout-id]')).forEach((button) => {{
+        button.addEventListener('click', () => setSelectedLayout(button.dataset.layoutId));
+      }});
+    }}
+
+    function renderLayoutSelectionSummary() {{
+      const layout = getActiveLayout();
+      const hasSelection = Boolean(state.selectedLayoutId);
+      elements.continueSetupButton.disabled = !hasSelection;
+      elements.selectedLayoutText.textContent = hasSelection ? layout.displayName : 'Nenhum';
+      elements.selectedLayoutHint.textContent = hasSelection
+        ? layout.previewLabel
+        : 'Escolha uma opcao para liberar o setup.';
+      elements.layoutSummaryCard.classList.toggle('hidden', !layout);
+      if (layout) {{
+        elements.layoutNameText.textContent = layout.displayName;
+        elements.layoutPreviewText.textContent = layout.previewLabel;
+      }}
+    }}
+
+    function renderSetupStage() {{
+      elements.loginPanel.classList.toggle('hidden', state.setupStage !== 'login');
+      elements.galleryPanel.classList.toggle('hidden', state.setupStage !== 'gallery');
+      elements.gamePanel.classList.toggle('hidden', state.setupStage !== 'setup');
+      const canChangeLayout = !state.game || state.game.status === 'draft';
+      elements.changeLayoutButton.classList.toggle('hidden', !canChangeLayout || state.setupStage !== 'setup');
+      elements.backToGalleryButton.classList.toggle('hidden', state.setupStage !== 'setup' || Boolean(state.game));
+      renderLayoutGallery();
+      renderLayoutSelectionSummary();
+    }}
+
+    async function continueToSetup() {{
+      if (!state.selectedLayoutId) {{
+        setNotice('Escolha um layout antes de abrir o setup.', true);
+        return;
+      }}
+      if (state.gameId && state.game && state.game.status === 'draft' && state.game.layoutId !== state.selectedLayoutId) {{
+        await patchGame({{ layoutId: state.selectedLayoutId }});
+      }}
+      state.setupStage = 'setup';
+      renderSetupStage();
+      const layout = getActiveLayout();
+      setNotice(`Layout selecionado: ${{layout.displayName}}.`);
+    }}
+
+    function openLayoutGallery() {{
+      if (state.game && state.game.status !== 'draft') {{
+        setNotice('O layout so pode ser alterado enquanto a partida estiver em draft.', true);
+        return;
+      }}
+      state.setupStage = 'gallery';
+      renderSetupStage();
     }}
 
     function applyTheme(mode) {{
@@ -689,6 +863,10 @@ def admin_html() -> str:
         syncClubSelectorsFromGame(null);
         elements.homeClubId.disabled = false;
         elements.awayClubId.disabled = false;
+        if (state.setupStage === 'setup' && !state.selectedLayoutId) {{
+          state.setupStage = 'gallery';
+        }}
+        renderSetupStage();
         setConfigOpen(true);
         return;
       }}
@@ -696,6 +874,9 @@ def admin_html() -> str:
         state.autoCollapsedGameId = state.gameId;
         state.configOpen = false;
       }}
+      setSelectedLayout(game.layoutId || defaultLayoutId);
+      state.setupStage = 'setup';
+      renderSetupStage();
       elements.controlPanel.classList.remove('hidden');
       syncClubSelectorsFromGame(game);
       const clubsLocked = game.status && game.status !== 'draft';
@@ -767,8 +948,8 @@ def admin_html() -> str:
         await request('/api/control/session', {{ method: 'POST', headers: {{ 'Content-Type': 'application/json', 'Accept': 'application/json' }}, body: JSON.stringify({{ password }}) }});
         state.password = password;
         sessionStorage.setItem('adminPassword', password);
-        elements.loginPanel.classList.add('hidden');
-        elements.gamePanel.classList.remove('hidden');
+        state.setupStage = state.gameId ? 'setup' : 'gallery';
+        renderSetupStage();
         setNotice('Painel liberado.');
         if (state.gameId) {{ await loadGame(); }}
       }} catch (error) {{
@@ -779,9 +960,13 @@ def admin_html() -> str:
     async function createGame() {{
       try {{
         validateClubSelection();
+        if (!state.selectedLayoutId) {{
+          throw new Error('Escolha um layout antes de criar a partida.');
+        }}
         const payload = {{
           homeClubId: elements.homeClubId.value,
           awayClubId: elements.awayClubId.value,
+          layoutId: state.selectedLayoutId,
         }};
         const created = await request('/api/games', {{ method: 'POST', headers: authHeaders(), body: JSON.stringify(payload) }});
         state.gameId = created.gameId;
@@ -800,7 +985,6 @@ def admin_html() -> str:
       }}
       try {{
         state.game = annotateGame(await request(`/api/games/${{encodeURIComponent(state.gameId)}}`, {{ headers: {{ 'Accept': 'application/json' }} }}));
-        elements.gamePanel.classList.remove('hidden');
         renderGame();
         startPolling();
       }} catch (error) {{
@@ -826,6 +1010,8 @@ def admin_html() -> str:
         state.game = null;
         state.gameId = '';
         state.autoCollapsedGameId = '';
+        setSelectedLayout('');
+        state.setupStage = 'gallery';
         elements.homeClubId.value = '';
         elements.awayClubId.value = '';
         history.replaceState(null, '', window.location.pathname);
@@ -869,6 +1055,9 @@ def admin_html() -> str:
     }});
     elements.menuButton.addEventListener('click', () => setConfigOpen(!state.configOpen));
     elements.hideConfigButton.addEventListener('click', () => setConfigOpen(false));
+    elements.continueSetupButton.addEventListener('click', continueToSetup);
+    elements.changeLayoutButton.addEventListener('click', openLayoutGallery);
+    elements.backToGalleryButton.addEventListener('click', openLayoutGallery);
     elements.createGameButton.addEventListener('click', createGame);
     elements.loadGameButton.addEventListener('click', loadGame);
     elements.closeGameButton.addEventListener('click', closeGame);
@@ -905,6 +1094,7 @@ def admin_html() -> str:
 
     populateClubSelectors();
     renderClubSelectionState();
+    renderSetupStage();
     initializeTheme();
     setConfigOpen(true);
     if (state.password) {{ elements.password.value = state.password; login(); }}
@@ -1016,7 +1206,8 @@ def games(req: func.HttpRequest) -> func.HttpResponse:
         away = payload.get("awayTeam") or {}
         home_club_id = payload.get("homeClubId") or clubs_by_name.get((home.get("name") or "").strip())
         away_club_id = payload.get("awayClubId") or clubs_by_name.get((away.get("name") or "").strip())
-        game = store.create_game(home_club_id=home_club_id, away_club_id=away_club_id)
+        layout_id = payload.get("layoutId")
+        game = store.create_game(home_club_id=home_club_id, away_club_id=away_club_id, layout_id=layout_id)
     except InvalidGameUpdate as exc:
         return json_response({"error": str(exc)}, status_code=422)
     except GameStateError as exc:

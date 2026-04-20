@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
 from azure.storage.blob import BlobServiceClient
 from club_catalog import club_catalog
+from scoreboard_layout_catalog import DEFAULT_LAYOUT_ID, LAYOUTS_BY_ID
 
 DEVSTORE_CONNECTION_STRING = (
     "DefaultEndpointsProtocol=http;"
@@ -110,6 +111,24 @@ def resolve_club(club_id: Any, field_name: str) -> Dict[str, Any]:
     return club
 
 
+def resolve_layout(layout_id: Any, field_name: str = "layoutId") -> Dict[str, Any]:
+    normalized = optional_string(layout_id, field_name)
+    if not normalized:
+        raise InvalidGameUpdate(f"{field_name} cannot be empty")
+    layout = LAYOUTS_BY_ID.get(normalized)
+    if layout is None:
+        raise InvalidGameUpdate(f"{field_name} must reference a valid layout")
+    return layout
+
+
+def ensure_layout_id(game: Dict[str, Any]) -> str:
+    layout_id = game.get("layoutId")
+    if isinstance(layout_id, str) and layout_id in LAYOUTS_BY_ID:
+        return layout_id
+    game["layoutId"] = DEFAULT_LAYOUT_ID
+    return DEFAULT_LAYOUT_ID
+
+
 def validate_club_selection(home_club_id: Any, away_club_id: Any) -> None:
     home_club = resolve_club(home_club_id, "homeClubId")
     away_club = resolve_club(away_club_id, "awayClubId")
@@ -117,14 +136,16 @@ def validate_club_selection(home_club_id: Any, away_club_id: Any) -> None:
         raise InvalidGameUpdate("homeClubId and awayClubId must be different")
 
 
-def build_initial_game(home_club_id: Any, away_club_id: Any) -> Dict[str, Any]:
+def build_initial_game(home_club_id: Any, away_club_id: Any, layout_id: Any) -> Dict[str, Any]:
     validate_club_selection(home_club_id, away_club_id)
     home_club = resolve_club(home_club_id, "homeClubId")
     away_club = resolve_club(away_club_id, "awayClubId")
+    layout = resolve_layout(layout_id, "layoutId")
     timestamp = utc_now_iso()
 
     return {
         "gameId": generate_game_id(),
+        "layoutId": layout["layoutId"],
         "status": "draft",
         "createdAt": timestamp,
         "updatedAt": timestamp,
@@ -250,6 +271,7 @@ def validate_period_transition(game: Dict[str, Any], next_period: int) -> None:
 
 def serialize_game(game: Dict[str, Any]) -> Dict[str, Any]:
     payload = copy.deepcopy(game)
+    ensure_layout_id(payload)
     normalize_clock(payload)
     payload["clock"].pop("lastStartedAt", None)
     return payload
@@ -258,6 +280,8 @@ def serialize_game(game: Dict[str, Any]) -> Dict[str, Any]:
 def apply_game_update(game: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(updates, dict):
         raise InvalidGameUpdate("Request body must be a JSON object")
+
+    ensure_layout_id(game)
 
     for team_key in ("homeTeam", "awayTeam"):
         if team_key in updates:
@@ -287,6 +311,12 @@ def apply_game_update(game: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str
     away_club_id = game.get("awayTeam", {}).get("clubId")
     if home_club_id and away_club_id and home_club_id == away_club_id:
         raise InvalidGameUpdate("homeTeam.clubId and awayTeam.clubId must be different")
+
+    if "layoutId" in updates:
+        if game.get("status") != "draft":
+            raise InvalidGameUpdate("layoutId can only be changed while status is draft")
+        layout = resolve_layout(updates["layoutId"], "layoutId")
+        game["layoutId"] = layout["layoutId"]
 
     if "currentPeriod" in updates:
         next_period = validate_period(updates["currentPeriod"])
@@ -358,8 +388,8 @@ class BlobGameStore:
     def _blob_name(self, game_id: str) -> str:
         return f"{sanitize_game_id(game_id)}.json"
 
-    def create_game(self, home_club_id: str, away_club_id: str) -> Dict[str, Any]:
-        game = build_initial_game(home_club_id, away_club_id)
+    def create_game(self, home_club_id: str, away_club_id: str, layout_id: str) -> Dict[str, Any]:
+        game = build_initial_game(home_club_id, away_club_id, layout_id)
         self.save_game(game)
         return serialize_game(game)
 
@@ -387,6 +417,7 @@ class BlobGameStore:
         game = payload.get("game")
         if not isinstance(game, dict):
             raise GameStateError("Stored game payload is invalid")
+        ensure_layout_id(game)
         normalize_clock(game)
         self._cache[game_id] = copy.deepcopy(game)
         return copy.deepcopy(game)

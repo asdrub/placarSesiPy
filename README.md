@@ -7,6 +7,7 @@ Functions e frontend servido como HTML/CSS/JS vanilla.
 
 - **Placar em tempo real** - Atualização automática a cada 20 segundos
 - **Console manual protegido** - Painel autenticado por senha unica para operar placar, faltas, periodo e cronometro
+- **Galeria de layouts apos o login** - Escolha visual obrigatoria do layout do placar antes do setup da partida
 - **Overlay publico por jogo** - URL publica por partida para uso em Streamlabs e outras transmissões
 - **Cronometro FIBA** - Contagem regressiva de 10 minutos por periodo, com pausa, retomada e reset ao trocar de quarto
 - **Interface responsiva** - Adaptada para desktop e mobile
@@ -61,6 +62,25 @@ PATCH /api/games/{gameId}
 DELETE /api/games/{gameId}
 ```
 Permite criar, atualizar e encerrar partidas manuais com o header `X-Admin-Password`.
+
+### Fluxo do console manual
+
+1. Login com a senha administrativa em `/api/control`.
+2. Escolha obrigatoria de um layout de placar na galeria exibida apos o login.
+3. Setup normal da partida com escolha dos clubes mandante e visitante.
+4. Operacao usual do painel, mantendo o comportamento existente de ocultacao e reabertura do sidebar.
+
+### Exemplo de criacao de partida manual
+
+```json
+{
+  "homeClubId": "sesi-araraquara",
+  "awayClubId": "ad-santo-andre",
+  "layoutId": "classic"
+}
+```
+
+`layoutId` identifica o layout selecionado na galeria e passa a acompanhar o estado publico da partida.
 
 ### Parâmetros
 
@@ -161,7 +181,8 @@ complexidade geral e custo operacional de forma objetiva.
 │  │                 │    │                                     │ │
 │  │ • Painel manual │    │ • Leitura publica do estado         │ │
 │  │ • Senha unica   │────┤ • PATCH/DELETE autenticados         │ │
-│  │ • Autosave      │    │ • Persistencia em blob JSON         │ │
+│  │ • Galeria layout│    │ • Persistencia em blob JSON         │ │
+│  │ • Autosave      │    │ • layoutId persistido               │ │
 │  └─────────────────┘    └─────────────────────────────────────┘ │
 │                    ┌─────────────────────────────────────┐      │
 │                    │    /api/overlay/{gameId}            │      │
@@ -216,6 +237,13 @@ Verifique se:
 - **azure-functions**: Runtime do Azure Functions
 - **azure-storage-blob**: Persistencia enxuta por blob JSON das partidas manuais
 - **requests**: Cliente HTTP para consultar API externa
+
+## ✅ Validacao rapida da nova feature
+
+1. Inicie a Function App com `PYTHONPATH="$PWD/.python_packages/lib/site-packages:$PYTHONPATH" func start`.
+2. Abra `http://localhost:7071/api/control`.
+3. Faça login e confirme a exibicao da galeria de layouts antes do setup da partida.
+4. Escolha um layout, crie a partida e verifique que o overlay continua acessivel pela URL gerada.
 
 ## 📐 Diretrizes de desenvolvimento
 

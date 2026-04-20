@@ -1,0 +1,230 @@
+openapi: 3.1.0
+info:
+  title: Scoreboard Layout Selection API
+  version: 0.1.0
+  summary: Contrato HTTP para criacao e leitura de partidas com selecao de layout de placar.
+servers:
+  - url: https://{host}
+    variables:
+      host:
+        default: localhost:7071
+paths:
+  /api/control:
+    get:
+      summary: Retorna a interface HTML do painel de controle com login, galeria de layouts e setup da partida.
+      responses:
+        '200':
+          description: HTML do painel administrativo.
+          content:
+            text/html:
+              schema:
+                type: string
+  /api/games:
+    post:
+      summary: Cria uma nova partida a partir de dois clubes oficiais distintos e um layout de placar selecionado.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGameRequest'
+      responses:
+        '201':
+          description: Partida criada com sucesso.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameCreatedResponse'
+        '401':
+          description: Nao autorizado.
+        '422':
+          description: Payload invalido, clube desconhecido, layout invalido ou combinacao duplicada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/games/{gameId}:
+    get:
+      summary: Retorna o estado publico atual de uma partida, incluindo o layout selecionado.
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Estado atual da partida.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameStateResponse'
+        '404':
+          description: Partida nao encontrada.
+    patch:
+      summary: Aplica atualizacoes parciais ao estado da partida, incluindo troca de layout apenas durante `draft`.
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GameUpdateRequest'
+      responses:
+        '200':
+          description: Estado atualizado da partida.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameStateResponse'
+        '401':
+          description: Nao autorizado.
+        '404':
+          description: Partida nao encontrada.
+        '422':
+          description: Payload invalido ou alteracao de layout fora de `draft`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  schemas:
+    CreateGameRequest:
+      type: object
+      required: [homeClubId, awayClubId, layoutId]
+      properties:
+        homeClubId:
+          $ref: '#/components/schemas/ClubId'
+        awayClubId:
+          $ref: '#/components/schemas/ClubId'
+        layoutId:
+          $ref: '#/components/schemas/LayoutId'
+      description: Requer dois clubes distintos e um layout valido escolhido na galeria.
+    GameCreatedResponse:
+      type: object
+      required: [gameId, overlayUrl, adminUrl, layoutId]
+      properties:
+        gameId:
+          type: string
+        overlayUrl:
+          type: string
+        adminUrl:
+          type: string
+        layoutId:
+          $ref: '#/components/schemas/LayoutId'
+    GameUpdateRequest:
+      type: object
+      properties:
+        layoutId:
+          $ref: '#/components/schemas/LayoutId'
+        homeTeam:
+          $ref: '#/components/schemas/TeamPatch'
+        awayTeam:
+          $ref: '#/components/schemas/TeamPatch'
+        currentPeriod:
+          type: integer
+          minimum: 1
+          maximum: 4
+        clock:
+          $ref: '#/components/schemas/ClockPatch'
+        status:
+          type: string
+          enum: [draft, live, paused, closed]
+    TeamPatch:
+      type: object
+      properties:
+        clubId:
+          $ref: '#/components/schemas/ClubId'
+        score:
+          type: integer
+          minimum: 0
+        fouls:
+          type: integer
+          minimum: 0
+    ClockPatch:
+      type: object
+      properties:
+        elapsedSeconds:
+          type: integer
+          minimum: 0
+          maximum: 600
+        isRunning:
+          type: boolean
+    GameStateResponse:
+      type: object
+      required: [gameId, status, currentPeriod, clock, homeTeam, awayTeam, updatedAt]
+      properties:
+        gameId:
+          type: string
+        layoutId:
+          allOf:
+            - $ref: '#/components/schemas/LayoutId'
+          nullable: true
+        status:
+          type: string
+          enum: [draft, live, paused, closed]
+        currentPeriod:
+          type: integer
+          minimum: 1
+          maximum: 4
+        updatedAt:
+          type: string
+          format: date-time
+        clock:
+          type: object
+          required: [elapsedSeconds, isRunning]
+          properties:
+            elapsedSeconds:
+              type: integer
+              minimum: 0
+              maximum: 600
+            isRunning:
+              type: boolean
+        homeTeam:
+          $ref: '#/components/schemas/TeamState'
+        awayTeam:
+          $ref: '#/components/schemas/TeamState'
+    TeamState:
+      type: object
+      required: [name, score, fouls]
+      properties:
+        clubId:
+          allOf:
+            - $ref: '#/components/schemas/ClubId'
+          nullable: true
+        name:
+          type: string
+        logoUrl:
+          type: string
+          format: uri
+        score:
+          type: integer
+          minimum: 0
+        fouls:
+          type: integer
+          minimum: 0
+    ClubId:
+      type: string
+      enum:
+        - sesi-araraquara
+        - arae-smel-catanduva
+        - sao-jose-basketball-atleta-cidadao
+        - feac-franca-basquete
+        - ad-santo-andre
+    LayoutId:
+      type: string
+      enum:
+        - classic
+        - broadcast-split
+        - compact-led
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
