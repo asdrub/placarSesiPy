@@ -94,10 +94,116 @@ def overlay_html() -> str:
     html, body {{ margin: 0; min-height: 100%; background: transparent; font-family: "Trebuchet MS", "Segoe UI", sans-serif; }}
     body {{ display: flex; align-items: flex-end; justify-content: center; padding: 10px; }}
     .shell {{ min-width: 520px; background: linear-gradient(135deg, rgba(7, 12, 24, 0.94), rgba(20, 31, 52, 0.88)); color: var(--text); border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 12px; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25); overflow: hidden; }}
+    .shell.shell--tv-block {{ min-width: 0; width: auto; background: transparent; border: 0; box-shadow: none; border-radius: 0; }}
+    .shell.shell--tv-block .status {{ display: none; }}
     .status {{ display: flex; justify-content: space-between; padding: 5px 10px; background: rgba(255,255,255,0.06); font-size: 0.9rem; letter-spacing: 0.08em; text-transform: uppercase; }}
     .board {{ display: grid; grid-template-columns: 1fr auto 1fr; align-items: stretch; gap: 6px; padding: 8px 8px 10px; }}
     .board.board--broadcast-split {{ grid-template-columns: 1fr 140px 1fr; }}
     .board.board--compact-led {{ grid-template-columns: 1fr; gap: 4px; }}
+    .tv-block-stage {{ padding: 0; }}
+    .tv-block-root {{
+      width: min(430px, calc(100vw - 20px));
+      background: #101010;
+      color: #fff;
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.28);
+      overflow: hidden;
+      font-family: "Oswald", "Trebuchet MS", sans-serif;
+    }}
+    .tv-block-header {{
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 8px;
+      background: #050505;
+      color: #fff;
+      padding: 4px 12px;
+      min-height: 34px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }}
+    .tv-block-period {{ justify-self: start; }}
+    .tv-block-clock {{
+      justify-self: center;
+      min-width: 88px;
+      text-align: center;
+      font-size: 1.1rem;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+    }}
+    .tv-block-empty {{ justify-self: end; width: 24px; }}
+    .tv-block-body {{
+      display: grid;
+      grid-template-columns: 68px minmax(0, 1fr) 68px;
+      align-items: stretch;
+      background: #1a1a1a;
+      min-height: 76px;
+    }}
+    .tv-block-team {{
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding: 6px 4px;
+      background: #f4f4f4;
+      color: #111;
+      overflow: hidden;
+    }}
+    .tv-block-team .tv-block-logo {{
+      width: 42px;
+      height: 42px;
+      min-width: 42px;
+      min-height: 42px;
+      max-width: 42px;
+      max-height: 42px;
+      object-fit: contain;
+      object-position: center;
+      display: block;
+      margin: 0 auto;
+      flex: 0 0 42px;
+    }}
+    .tv-block-short {{
+      width: 100%;
+      text-align: center;
+      font-size: 0.85rem;
+      font-weight: 800;
+      line-height: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }}
+    .tv-block-center {{ display: grid; grid-template-rows: 1fr auto; min-width: 0; }}
+    .tv-block-scores {{ display: grid; grid-template-columns: 1fr 1fr; }}
+    .tv-block-score {{
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      font-size: 2rem;
+      font-weight: 800;
+      line-height: 1;
+    }}
+    .tv-block-score.home {{ background: linear-gradient(180deg, #ea4335, #c62828); color: #fff; }}
+    .tv-block-score.away {{ background: linear-gradient(180deg, #2f80ed, #1565c0); color: #fff; }}
+    .tv-block-labels {{ display: grid; grid-template-columns: 1fr 1fr; }}
+    .tv-block-label {{
+      padding: 4px 6px 5px;
+      background: #2b2b2b;
+      color: #fff;
+      text-align: center;
+      font-size: 0.72rem;
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      border-top: 1px solid rgba(255,255,255,0.25);
+    }}
+    .tv-block-footer {{ height: 6px; background: #050505; }}
     .team {{ display: grid; grid-template-columns: 48px 1fr; gap: 8px; align-items: center; padding: 6px; border-radius: 10px; min-height: 56px; }}
     .team.away {{ grid-template-columns: 1fr 48px; }}
     .team.home {{ background: linear-gradient(135deg, rgba(198,40,40,0.92), rgba(127,29,29,0.92)); }}
@@ -159,7 +265,7 @@ def overlay_html() -> str:
       if (!currentGame) {{
         return;
       }}
-      const clockNode = document.querySelector('#content .clock');
+      const clockNode = document.querySelector('#content .clock, #content .tv-block-clock');
       if (!clockNode) {{
         return;
       }}
@@ -174,6 +280,7 @@ def overlay_html() -> str:
     }}
 
     function renderEmpty(message) {{
+      document.querySelector('.shell')?.classList.remove('shell--tv-block');
       document.getElementById('content').className = 'empty';
       document.getElementById('content').textContent = message;
       document.getElementById('status').textContent = 'Sem dados';
@@ -184,7 +291,43 @@ def overlay_html() -> str:
       currentGame = annotateGame(game);
       const layoutId = game.layoutId || '{DEFAULT_LAYOUT_ID}';
       const content = document.getElementById('content');
-      if (layoutId === 'broadcast-split') {{
+      const shell = document.querySelector('.shell');
+      if (layoutId === 'tv-block') {{
+        // TV Block Layout
+        shell?.classList.add('shell--tv-block');
+        content.className = 'tv-block-stage';
+        content.innerHTML = `
+          <div class="tv-block-root">
+            <div class="tv-block-header">
+              <span class="tv-block-period">${{(game.currentPeriod ? (['1ST','2ND','3RD','4TH'][game.currentPeriod-1]||'Q'+game.currentPeriod) : 'Q1')}}</span>
+              <span class="tv-block-clock">${{formatClock(clientClockSeconds(currentGame))}}</span>
+              <span class="tv-block-empty"></span>
+            </div>
+            <div class="tv-block-body">
+              <div class="tv-block-team">
+                <img class="tv-block-logo" src="${{game.homeTeam.logoUrl||''}}" alt="Logo casa">
+                <div class="tv-block-short">${{(game.homeTeam.name||'').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,3)}}</div>
+              </div>
+              <div class="tv-block-center">
+                <div class="tv-block-scores">
+                  <div class="tv-block-score home">${{game.homeTeam.score ?? 0}}</div>
+                  <div class="tv-block-score away">${{game.awayTeam.score ?? 0}}</div>
+                </div>
+                <div class="tv-block-labels">
+                  <div class="tv-block-label">${{game.homeTeam.name ? game.homeTeam.name.split(' ')[0].toUpperCase() : 'HOME'}}</div>
+                  <div class="tv-block-label">${{game.awayTeam.name ? game.awayTeam.name.split(' ')[0].toUpperCase() : 'AWAY'}}</div>
+                </div>
+              </div>
+              <div class="tv-block-team">
+                <img class="tv-block-logo" src="${{game.awayTeam.logoUrl||''}}" alt="Logo visitante">
+                <div class="tv-block-short">${{(game.awayTeam.name||'').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,3)}}</div>
+              </div>
+            </div>
+            <div class="tv-block-footer"></div>
+          </div>
+        `;
+      }} else if (layoutId === 'broadcast-split') {{
+        shell?.classList.remove('shell--tv-block');
         content.className = 'board board--broadcast-split';
         content.innerHTML = `
           <section class="team home">
@@ -205,7 +348,6 @@ def overlay_html() -> str:
             </div>
             <img class="logo" src="${{game.awayTeam.logoUrl || ''}}" alt="Logo time visitante">
           </section>`;
-      }} else if (layoutId === 'compact-led') {{
         content.className = 'compact-led-strip';
         content.innerHTML = `
           <section class="team home compact">
@@ -229,6 +371,7 @@ def overlay_html() -> str:
             <div class="compact-score">${{game.awayTeam.score ?? 0}}</div>
           </section>`;
       }} else {{
+        shell?.classList.remove('shell--tv-block');
         content.className = 'board';
         content.innerHTML = `
         <section class="team home">
